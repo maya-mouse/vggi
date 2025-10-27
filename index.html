@@ -2,56 +2,58 @@
 <html>
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-  <title>PA#1</title>
+  <title>PA#2 — Ding-Dong Surface (Phong shading, facet-average normals)</title>
   <style>
+    /* Новий CSS для центрування */
+    body {
+      font-family:'Trebuchet MS', Arial, sans-serif;
+      background-color: #ffffff;
+      margin: 12px;
+      display: flex; /* Увімкнути flexbox */
+      flex-direction: column; /* Елементи стовпцем */
+      align-items: center; /* Центрувати по горизонталі */
+    }
+    /* Загальні стилі */
+    #controls, #canvas-holder, h2 {
+        width: fit-content; /* Ширина по контенту */
+    }
 
-    body { 
-      font-family:'Trebuchet MS', 'Lucida Sans Unicode', 'Lucida Grande', 'Lucida Sans', Arial, sans-serif;
-      background-color: white;
-      justify-items: center;
-     }
-
-     button, input{
-      font-family: 'Trebuchet MS', 'Lucida Sans Unicode', 'Lucida Grande', 'Lucida Sans', Arial, sans-serif;
-      border-radius: 5px;
-      border: 2px solid black;
-      background-color: white;
-      text-align: center;
-     }
-     button{
-        min-width: 130px;
-        align-self: center;
-     }
-
-
+    #controls { margin:10px 0; }
+    fieldset { display:inline-block; padding:10px; border-radius:7px; border:2px solid #333; }
+    label { margin-right:12px; }
+    input[type="number"], input[type="range"] { vertical-align: middle; }
+    canvas { background-color: rgb(202,113,113); border:1px solid #333; }
+    .note { color:#444; font-size:0.9em; margin-top:6px; }
   </style>
 
   <script src="./Utils/trackball-rotator.js"></script>
   <script src="./Utils/m4.js"></script>
   <script src="./shader.gpu"></script>
+
   <script src="./Model.js"></script>
   <script src="./main.js"></script>
-
 </head>
 <body onload="init()">
 
-  <h2>A Cube with "Trackball" Mouse Rotation</h2>
+  <h2>Ding-Dong Surface — PA#2 (Phong, facet-average normals)</h2>
 
-  <p id="message">Drag your mouse on the cube to rotate it.</p>
-  <p>Ding-dong surface - variant 15</p>
-<div id="controls" style="margin:10px 0;">
-  <fieldset style="display:inline-block; 
-  padding:8px; border-radius: 7px; 
-  border: 2px solid black;">
-    <legend>Params</legend>
-    <label>uCount: <input id="uCount" type="number" min="4" max="360" value="60" step="1"></label>
-    <label>vCount: <input id="vCount" type="number" min="3" max="200" value="48" step="1"></label>
-    <br>
-  </fieldset>
-</div>
+  <div id="controls">
+    <fieldset>
+      <legend>Params</legend>
+      <label>U resolution:
+        <input id="uCount" type="range" min="3" max="80" value="60">
+        <input id="uCountNum" type="number" min="3" max="80" value="60" style="width:60px">
+      </label>
+      <label>V resolution:
+        <input id="vCount" type="range" min="3" max="60" value="48">
+        <input id="vCountNum" type="number" min="3" max="60" value="48" style="width:60px">
+      </label>
+      <div class="note">Use sliders or number boxes to change mesh granularity. Light rotates automatically.</div>
+    </fieldset>
+  </div>
 
   <div id="canvas-holder">
-     <canvas width="600" height="600" id="webglcanvas" style="background-color:rgb(202, 113, 113)"></canvas>
+     <canvas width="800" height="600" id="webglcanvas"></canvas>
   </div>
 
 </body>

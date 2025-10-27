@@ -1,9 +1,7 @@
-
 'use strict';
 
-// Parametric function ding-dong surface 
+
 function dingDong_param(u, v, a = 1.0) {
-    // u in radians, v real but must be < 1
     if (v >= 1.0) v = 0.999999;
     let oneMinusV = 1.0 - v;
     if (oneMinusV < 0) oneMinusV = 0;
@@ -14,105 +12,190 @@ function dingDong_param(u, v, a = 1.0) {
     return [x, y, z];
 }
 
-// Model — save buffers for u and v 
+// small vector helpers
+function vec3_sub(a, b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
+function vec3_add(a, b) { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
+function vec3_scale(a, s) { return [a[0]*s, a[1]*s, a[2]*s]; }
+function vec3_len(a) { return Math.hypot(a[0], a[1], a[2]); }
+function vec3_normalize(a) { let L = vec3_len(a)||1.0; return [a[0]/L, a[1]/L, a[2]/L]; }
+function vec3_cross(a, b) {
+    return [
+        a[1]*b[2] - a[2]*b[1],
+        a[2]*b[0] - a[0]*b[2],
+        a[0]*b[1] - a[1]*b[0]
+    ];
+}
+
+// Model constructor
 function Model(name) {
     this.name = name;
-    this.uLines = []; // array of { buffer, count }
-    this.vLines = [];
-    //colors by default
-    this.uColor = [1.0, 0.2, 0.2, 1.0]; 
-    this.vColor = [0.2, 0.7, 1.0, 1.0]; 
 
-    // clear buffers (call before repeating building)
-    this._clearLines = function() {
-        this.uLines = [];
-        this.vLines = [];
+    // GPU buffers
+    this.vertexBuffer = null;
+    this.normalBuffer = null;
+    this.indexBuffer = null;
+    this.indexCount = 0;
+
+    // material colors
+    this.ambient = [0.15, 0.15, 0.15];
+    this.diffuse = [0.8, 0.5, 0.9];
+    this.specular = [1.0, 1.0, 1.0];
+    this.shininess = 32.0;
+
+    // clear old buffers (JS references)
+    this._clearBuffers = function() {
+        this.vertexBuffer = null;
+        this.normalBuffer = null;
+        this.indexBuffer = null;
+        this.indexCount = 0;
     };
 
-    /*
-      createBuffersFromSurface(generateFunc, uCount, vCount)
-      generateFunc(u, v) => [x,y,z]
-      u is mapped from 0..2π
-      v is mapped from vMin..vMax (practical truncation of (-inf,1) )
-    */
+    // Build indexed mesh + facet-average normals and upload to GPU
+    // uCount, vCount integers
     this.createBuffersFromSurface = function(generateFunc, uCount, vCount) {
-        this._clearLines();
-        // parameters limits
-        let uMin = 0.0;
-        let uMax = 2.0 * Math.PI;
-        // practical v-range for ding-dong: v in (-inf, 1)
-        let vMin = -2.0;
-        let vMax = 0.9999;
+        this._clearBuffers();
 
-        // define step (delta)
-        let deltaU = (uMax - uMin) / (uCount - 1); 
-        let deltaV = (vMax - vMin) / (vCount - 1); 
+        // parameter ranges (hardcoded safe defaults)
+        const uMin = 0.0, uMax = 2.0 * Math.PI;
+        const vMin = -2.0, vMax = 0.99999;
 
-        // creating grid
-        let grid = new Array(uCount);
+        // step sizes
+        // so u = uMin + i * deltaU, i = 0..uCount-1
+        const deltaU = (uMax - uMin) / uCount;
+        const deltaV = (vMax - vMin) / (vCount - 1);
+
+        // positions array (flat)
+        const positions = new Float32Array(uCount * vCount * 3);
+
+        // helper index
+        const idx = (i, j) => i * vCount + j;
+
+        // fill positions
         for (let i = 0, u = uMin; i < uCount; ++i, u += deltaU) {
-          grid[i] = new Array(vCount);
-           for (let j = 0, v = vMin; j < vCount; ++j, v += deltaV) {
-            grid[i][j] = generateFunc(u, v);
-           }
+            for (let j = 0, v = vMin; j < vCount; ++j, v += deltaV) {
+                const p = generateFunc(u, v);
+                const k = idx(i,j) * 3;
+                positions[k] = p[0]; positions[k+1] = p[1]; positions[k+2] = p[2];
+            }
         }
 
-        // u-polylines (fixed u, changed v) - horizontal lines
+        // build indices (two triangles per cell)
+        const indices = [];
         for (let i = 0; i < uCount; ++i) {
-            let verts = [];
-            for (let j = 0; j < vCount; ++j) {
-                verts.push(grid[i][j][0], grid[i][j][1], grid[i][j][2]);
+            const iNext = (i + 1) % uCount; 
+            for (let j = 0; j < vCount - 1; ++j) {
+                
+                const a = idx(i, j);
+                const b = idx(iNext, j);
+                const c = idx(iNext, j+1);
+                const d = idx(i, j+1);
+                
+                indices.push(a, b, c);
+                indices.push(a, c, d);
             }
-            let buf = gl.createBuffer();
-            gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
-            this.uLines.push({ buffer: buf, count: verts.length / 3 });
         }
 
-        // v-polylines (fixed v, changing u) - vertical lines
-        for (let j = 0; j < vCount; ++j) {
-            let verts = [];
-            for (let i = 0; i < uCount; ++i) {
-                verts.push(grid[i][j][0], grid[i][j][1], grid[i][j][2]);
-            }
-            let buf = gl.createBuffer();
-            gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
-            this.vLines.push({ buffer: buf, count: verts.length / 3 });
+        // compute facet-average normals:
+        const normals = new Float32Array(positions.length); // initially zeros
+
+        function addFaceNormal(ai, bi, ci) {
+            const ax = positions[ai*3], ay = positions[ai*3+1], az = positions[ai*3+2];
+            const bx = positions[bi*3], by = positions[bi*3+1], bz = positions[bi*3+2];
+            const cx = positions[ci*3], cy = positions[ci*3+1], cz = positions[ci*3+2];
+            const ABx = bx - ax, ABy = by - ay, ABz = bz - az;
+            const ACx = cx - ax, ACy = cy - ay, ACz = cz - az;
+            const nx = ABy * ACz - ABz * ACy;
+            const ny = ABz * ACx - ABx * ACz;
+            const nz = ABx * ACy - ABy * ACx;
+            normals[ai*3]   += nx; normals[ai*3+1] += ny; normals[ai*3+2] += nz;
+            normals[bi*3]   += nx; normals[bi*3+1] += ny; normals[bi*3+2] += nz;
+            normals[ci*3]   += nx; normals[ci*3+1] += ny; normals[ci*3+2] += nz;
         }
+
+        for (let t = 0; t < indices.length; t += 3) {
+            addFaceNormal(indices[t], indices[t+1], indices[t+2]);
+        }
+
+        // normalize normals
+        const vertCount = positions.length / 3;
+        for (let vi = 0; vi < vertCount; ++vi) {
+            const nx = normals[vi*3], ny = normals[vi*3+1], nz = normals[vi*3+2];
+            const L = Math.hypot(nx, ny, nz) || 1.0;
+            normals[vi*3] = nx / L;
+            normals[vi*3+1] = ny / L;
+            normals[vi*3+2] = nz / L;
+        }
+
+        // upload to GPU
+        this.vertexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+        this.normalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
+
+        let indexArray;
+        if (positions.length / 3 > 65535) {
+            // request extension
+            const ext = gl.getExtension('OES_element_index_uint');
+            if (!ext) {
+                throw new Error('Too many vertices and extension OES_element_index_uint not available.');
+            }
+            indexArray = new Uint32Array(indices);
+            this._indexType = gl.UNSIGNED_INT;
+        } else {
+            indexArray = new Uint16Array(indices);
+            this._indexType = gl.UNSIGNED_SHORT;
+        }
+
+        this.indexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexArray, gl.STATIC_DRAW);
+
+        this.indexCount = indices.length;
+
+        // store some arrays
+        this._positions = positions;
+        this._normals = normals;
+        this._indices = indexArray;
     };
 
-    // set colors
-    this.setColors = function(uColorRGBA, vColorRGBA) {
-        if (uColorRGBA && uColorRGBA.length === 4) this.uColor = uColorRGBA.slice();
-        if (vColorRGBA && vColorRGBA.length === 4) this.vColor = vColorRGBA.slice();
+    // optionally set material
+    this.setMaterial = function(ambient, diffuse, specular, shininess) {
+        if (ambient) this.ambient = ambient.slice();
+        if (diffuse) this.diffuse = diffuse.slice();
+        if (specular) this.specular = specular.slice();
+        if (shininess) this.shininess = shininess;
     };
 
-    // drawing all lines
+    // draw mesh
     this.Draw = function() {
-        // u-polylines
-        if (shProgram && shProgram.iColor !== -1) {
-            gl.uniform4fv(shProgram.iColor, this.uColor);
-        }
-        for (let line of this.uLines) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, line.buffer);
-            gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
-            gl.enableVertexAttribArray(shProgram.iAttribVertex);
-            gl.drawArrays(gl.LINE_STRIP, 0, line.count);
-        }
-        // v-polylines
-        if (shProgram && shProgram.iColor !== -1) {
-            gl.uniform4fv(shProgram.iColor, this.vColor);
-        }
-        for (let line of this.vLines) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, line.buffer);
-            gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
-            gl.enableVertexAttribArray(shProgram.iAttribVertex);
-            gl.drawArrays(gl.LINE_STRIP, 0, line.count);
-        }
+        if (!this.vertexBuffer || !this.normalBuffer || !this.indexBuffer) return;
+
+        // positions
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+        gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(shProgram.iAttribVertex);
+
+        // normals
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
+        gl.vertexAttribPointer(shProgram.iAttribNormal, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(shProgram.iAttribNormal);
+
+        // indices
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+
+        // set material uniforms (if available)
+        if (shProgram.iAmbient) gl.uniform3fv(shProgram.iAmbient, this.ambient);
+        if (shProgram.iDiffuse) gl.uniform3fv(shProgram.iDiffuse, this.diffuse);
+        if (shProgram.iSpecular) gl.uniform3fv(shProgram.iSpecular, this.specular);
+        if (shProgram.iShininess) gl.uniform1f(shProgram.iShininess, this.shininess);
+
+        // draw triangles
+        gl.drawElements(gl.TRIANGLES, this.indexCount, this._indexType, 0);
     };
 }
 
-// export for using model in main.js
 window.Model = Model;
 window.dingDong_param = dingDong_param;

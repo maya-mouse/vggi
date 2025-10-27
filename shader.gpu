@@ -1,13 +1,24 @@
 
+
 // Vertex shader
 const vertexShaderSource = `
 attribute vec3 vertex;
+attribute vec3 normal;
+
 uniform mat4 ModelViewProjectionMatrix;
+uniform mat4 ModelViewMatrix;
+uniform mat3 NormalMatrix;
+
+varying vec3 vNormal;
+varying vec3 vPosition;
 
 void main() {
-    gl_Position = ModelViewProjectionMatrix * vec4(vertex,1.0);
-}`;
-
+    vec4 posEye = ModelViewMatrix * vec4(vertex, 1.0);
+    vPosition = posEye.xyz;
+    vNormal = normalize(NormalMatrix * normal);
+    gl_Position = ModelViewProjectionMatrix * vec4(vertex, 1.0);
+}
+`;
 
 // Fragment shader
 const fragmentShaderSource = `
@@ -17,7 +28,33 @@ const fragmentShaderSource = `
    precision mediump float;
 #endif
 
-uniform vec4 color;
+varying vec3 vNormal;
+varying vec3 vPosition;
+
+uniform vec3 lightPosEye;      // light position in eye-space
+uniform vec3 ambientColor;     // ambient term
+uniform vec3 diffuseColor;     // diffuse term
+uniform vec3 specularColor;    // specular term
+uniform float shininess;       // specular exponent
+
 void main() {
-    gl_FragColor = color;
-}`;
+    vec3 N = normalize(vNormal);
+    vec3 L = normalize(lightPosEye - vPosition);
+   
+    vec3 V = normalize(-vPosition);
+    vec3 R = reflect(-L, N);
+
+    float lambert = max(dot(N, L), 0.0);
+    float spec = 0.0;
+    if (lambert > 0.0) {
+        spec = pow(max(dot(R, V), 0.0), shininess);
+    }
+
+    vec3 ambient = ambientColor;
+    vec3 diffuse = diffuseColor * lambert;
+    vec3 specular = specularColor * spec;
+
+    vec3 color = ambient + diffuse + specular;
+    gl_FragColor = vec4(color, 1.0);
+}
+`;
