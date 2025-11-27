@@ -1,21 +1,41 @@
-
-
 // Vertex shader
 const vertexShaderSource = `
 attribute vec3 vertex;
 attribute vec3 normal;
+attribute vec2 a_texcoord;
+attribute vec3 a_tangent;
 
 uniform mat4 ModelViewProjectionMatrix;
 uniform mat4 ModelViewMatrix;
 uniform mat3 NormalMatrix;
+uniform vec3 lightPosEye;
 
-varying vec3 vNormal;
-varying vec3 vPosition;
+varying vec2 v_texcoord;
+varying vec3 v_tangent_light_pos; // Tangent-space light position
+varying vec3 v_tangent_view_pos;  // Tangent-space view position
 
 void main() {
     vec4 posEye = ModelViewMatrix * vec4(vertex, 1.0);
-    vPosition = posEye.xyz;
-    vNormal = normalize(NormalMatrix * normal);
+    
+    vec3 n = normalize(NormalMatrix * normal);
+    vec3 t = normalize(NormalMatrix * a_tangent);
+    
+    // Gram-Schmidt orthogonalize T with respect to N
+    t = normalize(t - dot(t, n) * n);
+    
+    vec3 b = cross(n, t);
+    
+    // TBN matrix transforms from eye space to tangent space
+    mat3 tbnMatrix = mat3(t.x, b.x, n.x,
+                          t.y, b.y, n.y,
+                          t.z, b.z, n.z);
+
+    // Transform light and view positions to tangent space
+    v_tangent_light_pos = tbnMatrix * lightPosEye;
+    v_tangent_view_pos = tbnMatrix * posEye.xyz;
+
+    v_texcoord = a_texcoord;
+    
     gl_Position = ModelViewProjectionMatrix * vec4(vertex, 1.0);
 }
 `;
@@ -28,33 +48,44 @@ const fragmentShaderSource = `
    precision mediump float;
 #endif
 
-varying vec3 vNormal;
-varying vec3 vPosition;
+varying vec2 v_texcoord;
+varying vec3 v_tangent_light_pos;
+varying vec3 v_tangent_view_pos;
 
-uniform vec3 lightPosEye;      // light position in eye-space
-uniform vec3 ambientColor;     // ambient term
-uniform vec3 diffuseColor;     // diffuse term
-uniform vec3 specularColor;    // specular term
-uniform float shininess;       // specular exponent
+uniform sampler2D u_diffuse_texture;
+uniform sampler2D u_specular_texture;
+uniform sampler2D u_normal_texture;
+uniform vec3 ambientColor;
+uniform float shininess;
+
+// User-added color tint
+uniform vec3 u_color_tint;
 
 void main() {
-    vec3 N = normalize(vNormal);
-    vec3 L = normalize(lightPosEye - vPosition);
-   
-    vec3 V = normalize(-vPosition);
+    // Sample normal from map and unpack to [-1, 1] range
+    vec3 N = normalize(texture2D(u_normal_texture, v_texcoord).rgb * 2.0 - 1.0);
+
+    // Get texture colors
+    vec3 diffuse_color = texture2D(u_diffuse_texture, v_texcoord).rgb * u_color_tint;
+    vec3 specular_color = texture2D(u_specular_texture, v_texcoord).rgb;
+
+    // Lighting vectors in tangent space
+    vec3 L = normalize(v_tangent_light_pos - v_tangent_view_pos);
+    vec3 V = normalize(-v_tangent_view_pos);
     vec3 R = reflect(-L, N);
 
+    // Lighting calculation
     float lambert = max(dot(N, L), 0.0);
     float spec = 0.0;
     if (lambert > 0.0) {
         spec = pow(max(dot(R, V), 0.0), shininess);
     }
-
+  
+    // Final color
     vec3 ambient = ambientColor;
-    vec3 diffuse = diffuseColor * lambert;
-    vec3 specular = specularColor * spec;
+    vec3 diffuse = diffuse_color * lambert;
+    vec3 specular = specular_color * spec;
 
-    vec3 color = ambient + diffuse + specular;
-    gl_FragColor = vec4(color, 1.0);
+    gl_FragColor = vec4(ambient + diffuse + specular, 1.0);
 }
 `;
