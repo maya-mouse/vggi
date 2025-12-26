@@ -20,8 +20,8 @@ void main() {
     vec3 n = normalize(NormalMatrix * normal);
     vec3 t = normalize(NormalMatrix * a_tangent);
     
-    // Gram-Schmidt orthogonalize T with respect to N
-    t = normalize(t - dot(t, n) * n);
+    // Gram-Schmidt orthogonalize N with respect to T (prioritize tangent)
+    n = normalize(n - dot(n, t) * t);
     
     vec3 b = cross(n, t);
     
