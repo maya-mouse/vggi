@@ -17,16 +17,22 @@ function dingDong_param(u, v, a = 1.0) {
 // Model — save buffers for u and v 
 function Model(name) {
     this.name = name;
-    this.uLines = []; // array of { buffer, count }
-    this.vLines = [];
+    this.uBufferData = { buffer: null, lines: [] }; // lines: array of { start, count }
+    this.vBufferData = { buffer: null, lines: [] };
     //colors by default
     this.uColor = [1.0, 0.2, 0.2, 1.0]; 
     this.vColor = [0.2, 0.7, 1.0, 1.0]; 
 
     // clear buffers (call before repeating building)
     this._clearLines = function() {
-        this.uLines = [];
-        this.vLines = [];
+        if (this.uBufferData.buffer) {
+            gl.deleteBuffer(this.uBufferData.buffer);
+        }
+        if (this.vBufferData.buffer) {
+            gl.deleteBuffer(this.vBufferData.buffer);
+        }
+        this.uBufferData = { buffer: null, lines: [] };
+        this.vBufferData = { buffer: null, lines: [] };
     };
 
     /*
@@ -56,30 +62,42 @@ function Model(name) {
             grid[i][j] = generateFunc(u, v);
            }
         }
-
-        // u-polylines (fixed u, changed v) - horizontal lines
+        
+        // Combine all vertices for U-lines into one array
+        let all_u_verts = [];
+        let u_current_start = 0;
         for (let i = 0; i < uCount; ++i) {
-            let verts = [];
+            let line_verts = [];
             for (let j = 0; j < vCount; ++j) {
-                verts.push(grid[i][j][0], grid[i][j][1], grid[i][j][2]);
+                line_verts.push(grid[i][j][0], grid[i][j][1], grid[i][j][2]);
             }
-            let buf = gl.createBuffer();
-            gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
-            this.uLines.push({ buffer: buf, count: verts.length / 3 });
+            all_u_verts.push(...line_verts);
+            this.uBufferData.lines.push({ start: u_current_start, count: line_verts.length / 3 });
+            u_current_start += line_verts.length / 3;
         }
 
-        // v-polylines (fixed v, changing u) - vertical lines
+        // Create and buffer U-lines data
+        this.uBufferData.buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.uBufferData.buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(all_u_verts), gl.STATIC_DRAW);
+
+        // Combine all vertices for V-lines into one array
+        let all_v_verts = [];
+        let v_current_start = 0;
         for (let j = 0; j < vCount; ++j) {
-            let verts = [];
+            let line_verts = [];
             for (let i = 0; i < uCount; ++i) {
-                verts.push(grid[i][j][0], grid[i][j][1], grid[i][j][2]);
+                line_verts.push(grid[i][j][0], grid[i][j][1], grid[i][j][2]);
             }
-            let buf = gl.createBuffer();
-            gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
-            this.vLines.push({ buffer: buf, count: verts.length / 3 });
+            all_v_verts.push(...line_verts);
+            this.vBufferData.lines.push({ start: v_current_start, count: line_verts.length / 3 });
+            v_current_start += line_verts.length / 3;
         }
+        
+        // Create and buffer V-lines data
+        this.vBufferData.buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vBufferData.buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(all_v_verts), gl.STATIC_DRAW);
     };
 
     // set colors
@@ -90,25 +108,34 @@ function Model(name) {
 
     // drawing all lines
     this.Draw = function() {
+        if (!shProgram) return;
+
         // u-polylines
-        if (shProgram && shProgram.iColor !== -1) {
-            gl.uniform4fv(shProgram.iColor, this.uColor);
-        }
-        for (let line of this.uLines) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, line.buffer);
+        if (this.uBufferData.buffer && this.uBufferData.lines.length > 0) {
+            if (shProgram.iColor !== -1) {
+                gl.uniform4fv(shProgram.iColor, this.uColor);
+            }
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.uBufferData.buffer);
             gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
             gl.enableVertexAttribArray(shProgram.iAttribVertex);
-            gl.drawArrays(gl.LINE_STRIP, 0, line.count);
+            
+            for (let line of this.uBufferData.lines) {
+                gl.drawArrays(gl.LINE_STRIP, line.start, line.count);
+            }
         }
+
         // v-polylines
-        if (shProgram && shProgram.iColor !== -1) {
-            gl.uniform4fv(shProgram.iColor, this.vColor);
-        }
-        for (let line of this.vLines) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, line.buffer);
+        if (this.vBufferData.buffer && this.vBufferData.lines.length > 0) {
+            if (shProgram.iColor !== -1) {
+                gl.uniform4fv(shProgram.iColor, this.vColor);
+            }
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.vBufferData.buffer);
             gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
             gl.enableVertexAttribArray(shProgram.iAttribVertex);
-            gl.drawArrays(gl.LINE_STRIP, 0, line.count);
+
+            for (let line of this.vBufferData.lines) {
+                gl.drawArrays(gl.LINE_STRIP, line.start, line.count);
+            }
         }
     };
 }
