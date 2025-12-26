@@ -5,20 +5,21 @@ let surface;                     // A surface model
 let shProgram;                   // A shader program (wrapper)
 let spaceball;                   // Trackball
 let diffuseTexture, normalTexture, specularTexture; // Textures
+let textureScale = 1.0;
+let textureCenter = [0.5, 0.5];
 
 function deg2rad(angle) { return angle * Math.PI / 180; }
 
-// --- НОВА ФУНКЦІЯ ПЕРЕВІРКИ НА СТУПІНЬ ДВІЙКИ (ДЛЯ MIPMAPS) ---
 function isPowerOf2(value) {
     return (value & (value - 1)) === 0;
 }
 
-// --- НОВА ФУНКЦІЯ ДЛЯ АСИНХРОННОГО ЗАВАНТАЖЕННЯ ТЕКСТУРИ З ФАЙЛУ ---
+
 function loadTextureFromFile(gl, path) {
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
 
-    // Тимчасово заповнюємо текстуру 1x1 пікселем (синім), поки зображення завантажується
+  
     const level = 0;
     const internalFormat = gl.RGBA;
     const width = 1;
@@ -34,14 +35,15 @@ function loadTextureFromFile(gl, path) {
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, srcFormat, srcType, image);
 
-        // Налаштування фільтрації
+
         if (isPowerOf2(image.width) && isPowerOf2(image.height)) {
-           // Зображення ступеневе: генеруємо mipmaps
+ 
            gl.generateMipmap(gl.TEXTURE_2D);
+           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         } else {
-           // Зображення НЕ ступеневе: використовуємо лише CLAMP_TO_EDGE
            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -53,14 +55,13 @@ function loadTextureFromFile(gl, path) {
     image.onerror = () => {
         console.error(`Failed to load texture from: ${path}`);
     };
-    // !!! ПЕРЕКОНАЙТЕСЯ, ЩО ЦЕЙ ШЛЯХ ПРАВИЛЬНИЙ ДЛЯ ВАШОЇ СТРУКТУРИ ПАПОК !!!
+
     image.src = path;
 
     return texture;
 }
 
 
-// multiply 4x4 matrix (column-major) by vec4
 function multiplyMat4Vec4(m, v) {
     return [
         m[0]*v[0] + m[4]*v[1] + m[8]*v[2] + m[12]*v[3],
@@ -126,6 +127,10 @@ function draw() {
     const lightEye = multiplyMat4Vec4(modelView, lightWorld);
     gl.uniform3fv(shProgram.iLightPosEye, [lightEye[0], lightEye[1], lightEye[2]]);
 
+    // Pass texture transformation uniforms
+    gl.uniform1f(shProgram.iTextureScale, textureScale);
+    gl.uniform2fv(shProgram.iTextureCenter, textureCenter);
+
     // Bind textures
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, diffuseTexture);
@@ -164,6 +169,8 @@ function initGL() {
     shProgram.iSpecularTexture = gl.getUniformLocation(prog, "u_specular_texture");
     shProgram.iNormalTexture = gl.getUniformLocation(prog, "u_normal_texture");
     shProgram.iColorTint = gl.getUniformLocation(prog, "u_color_tint");
+    shProgram.iTextureScale = gl.getUniformLocation(prog, "u_texture_scale");
+    shProgram.iTextureCenter = gl.getUniformLocation(prog, "u_texture_center");
 
     // --- ЗАВАНТАЖЕННЯ ТЕКСТУР З ПАПКИ textures/ ---
     diffuseTexture = loadTextureFromFile(gl, "textures/diffuse.jpg");
@@ -184,14 +191,43 @@ function initGL() {
         vRange.addEventListener('input', () => { vNum.value = vRange.value; });
         vNum.addEventListener('change', () => { vRange.value = vNum.value; });
     }
-    uRange.addEventListener('input', rebuildSurfaceFromUI);
-    uNum.addEventListener('change', rebuildSurfaceFromUI);
-    vRange.addEventListener('input', rebuildSurfaceFromUI);
-    vNum.addEventListener('change', rebuildSurfaceFromUI);
-
-    gl.enable(gl.DEPTH_TEST);
-}
-
+        uRange.addEventListener('input', rebuildSurfaceFromUI);
+        uNum.addEventListener('change', rebuildSurfaceFromUI);
+        vRange.addEventListener('input', rebuildSurfaceFromUI);
+        vNum.addEventListener('change', rebuildSurfaceFromUI);
+    
+        const uPointRange = document.getElementById('uPoint'), vPointRange = document.getElementById('vPoint');
+        const scaleRange = document.getElementById('scale');
+        const uPointNum = document.getElementById('uPointNum'), vPointNum = document.getElementById('vPointNum');
+        const scaleNum = document.getElementById('scaleNum');
+    
+        function setupSlider(rangeEl, numEl, isScale) {
+            rangeEl.addEventListener('input', () => {
+                const value = parseFloat(rangeEl.value);
+                numEl.value = value;
+                if(isScale) textureScale = value;
+                else {
+                    if(rangeEl.id.startsWith('u')) textureCenter[0] = value;
+                    else textureCenter[1] = value;
+                }
+            });
+            numEl.addEventListener('change', () => {
+                const value = parseFloat(numEl.value);
+                rangeEl.value = value;
+                if(isScale) textureScale = value;
+                else {
+                    if(numEl.id.startsWith('u')) textureCenter[0] = value;
+                    else textureCenter[1] = value;
+                }
+            });
+        }
+    
+        setupSlider(uPointRange, uPointNum, false);
+        setupSlider(vPointRange, vPointNum, false);
+        setupSlider(scaleRange, scaleNum, true);
+    
+        gl.enable(gl.DEPTH_TEST);
+    }
 
 function ShaderProgram(name, program) {
     this.name = name;
@@ -210,6 +246,8 @@ function ShaderProgram(name, program) {
     this.iSpecularTexture = -1;
     this.iNormalTexture = -1;
     this.iColorTint = -1;
+    this.iTextureScale = -1;
+    this.iTextureCenter = -1;
     this.Use = function() { gl.useProgram(this.prog); };
 }
 
@@ -253,6 +291,7 @@ function init() {
         return;
     }
     spaceball = new TrackballRotator(canvas, draw, 0);
+
     function animate() {
         draw();
         requestAnimationFrame(animate);

@@ -10,6 +10,10 @@ uniform mat4 ModelViewMatrix;
 uniform mat3 NormalMatrix;
 uniform vec3 lightPosEye;
 
+// Uniforms for texture transformation
+uniform float u_texture_scale;
+uniform vec2 u_texture_center;
+
 varying vec2 v_texcoord;
 varying vec3 v_tangent_light_pos; // Tangent-space light position
 varying vec3 v_tangent_view_pos;  // Tangent-space view position
@@ -34,7 +38,8 @@ void main() {
     v_tangent_light_pos = tbnMatrix * lightPosEye;
     v_tangent_view_pos = tbnMatrix * posEye.xyz;
 
-    v_texcoord = a_texcoord;
+    // Apply texture transformation
+    v_texcoord = (a_texcoord - u_texture_center) * u_texture_scale + u_texture_center;
     
     gl_Position = ModelViewProjectionMatrix * vec4(vertex, 1.0);
 }
