@@ -5,7 +5,7 @@ let surface;                     // A surface model
 let shProgram;                   // A shader program (wrapper)
 let spaceball;                   // Trackball
 let diffuseTexture, normalTexture, specularTexture; // Textures
-let textureScale = 1.0;
+let textureScale = 0.5;
 let textureCenter = [0.5, 0.5];
 
 function deg2rad(angle) { return angle * Math.PI / 180; }
